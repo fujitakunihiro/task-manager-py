@@ -507,65 +507,125 @@ class TaskTimerApp:
             data_matrix.append(row)
         data_matrix = np.array(data_matrix)
 
-        x = np.arange(len(labels))
-        fig, ax = plt.subplots(figsize=(max(8, len(labels) * 0.6), 5))
-
-        bottom = np.zeros(len(labels))
-        bars = []
-        for i, c in enumerate(categories):
-            vals = data_matrix[i]
-            b = ax.bar(x, vals, bottom=bottom, color=cat_colors.get(c), label=c)
-            bars.append(b)
-            bottom += vals
-
-        # 小さなセグメントはラベルを非表示にするための閾値（最大合計の 2%）
-        totals_hours = bottom
-        max_total = max(totals_hours) if len(totals_hours) else 0
-        min_display = max_total * 0.02
-
-        # 各セグメント内部に hh:mm:ss 表示（高さが十分なもののみ）
-        for i, b in enumerate(bars):
-            for j, rect in enumerate(b):
-                h = rect.get_height()  # hours
-                if h <= 0:
-                    continue
-                if h < min_display:
-                    continue
-                secs = int(h * 3600)
-                label = self.format_seconds(secs)
-                x_pos = rect.get_x() + rect.get_width() / 2
-                y_pos = rect.get_y() + h / 2
-                color_rgba = cat_colors.get(categories[i])
-                try:
-                    r, g, bl = color_rgba[:3]
-                    luminance = 0.299 * r + 0.587 * g + 0.114 * bl
-                    text_color = 'white' if luminance < 0.5 else 'black'
-                except Exception:
-                    text_color = 'black'
-                ax.text(x_pos, y_pos, label, ha='center', va='center', color=text_color, fontsize=8)
-
-        # バー上に合計を hh:mm:ss で表示
-        for xi, total in enumerate(totals_hours):
-            if total > 0:
-                total_secs = int(total * 3600)
-                ax.text(xi, total, self.format_seconds(total_secs), ha='center', va='bottom', fontsize=9)
-
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=45, ha='right')
-        ax.set_ylabel('作業時間（時間）')
-        ax.set_title('タスク別 作業時間（カテゴリ内訳）')
-
-        # 凡例（カテゴリ）
-        ax.legend(title='カテゴリ', bbox_to_anchor=(1.02, 1), loc='upper left')
-
-        fig.tight_layout()
-
-        # 表示ウィンドウ
+        # ウィンドウとレイアウト
         win = tk.Toplevel(self.root)
         win.title("タスク別グラフ（カテゴリ内訳）")
-        canvas = FigureCanvasTkAgg(fig, master=win)
-        canvas.draw()
+        win.geometry("900x520")
+
+        left_ctrl = tk.Frame(win, width=220)
+        left_ctrl.pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=6)
+        right_area = tk.Frame(win)
+        right_area.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # タスクが5件以上の場合はチェックボックスで選択可能にする
+        sel_vars = []
+        if len(labels) >= 5:
+            tk.Label(left_ctrl, text="表示するタスク（チェック）", anchor='w').pack(anchor='nw')
+
+            canvas_sc = tk.Canvas(left_ctrl)
+            sb = tk.Scrollbar(left_ctrl, orient=tk.VERTICAL, command=canvas_sc.yview)
+            inner = tk.Frame(canvas_sc)
+            inner_id = canvas_sc.create_window((0, 0), window=inner, anchor='nw')
+
+            def on_inner_config(event):
+                canvas_sc.configure(scrollregion=canvas_sc.bbox('all'))
+            inner.bind('<Configure>', on_inner_config)
+
+            canvas_sc.configure(yscrollcommand=sb.set, width=200, height=360)
+            canvas_sc.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+            for lbl in labels:
+                var = tk.BooleanVar(value=True)
+                cb = tk.Checkbutton(inner, text=lbl, variable=var, anchor='w')
+                cb.pack(fill='x', anchor='w')
+                sel_vars.append((lbl, var))
+
+            btnf = tk.Frame(left_ctrl)
+            btnf.pack(fill='x', pady=(6, 0))
+            tk.Button(btnf, text='全選択', command=lambda: [v.set(True) for _, v in sel_vars]).pack(side=tk.LEFT, padx=4)
+            tk.Button(btnf, text='全解除', command=lambda: [v.set(False) for _, v in sel_vars]).pack(side=tk.LEFT, padx=4)
+            tk.Button(btnf, text='適用', command=lambda: draw([l for l, v in sel_vars if v.get()])).pack(side=tk.RIGHT, padx=4)
+        else:
+            sel_vars = None
+
+        # 描画領域
+        fig, ax = plt.subplots(figsize=(max(8, len(labels) * 0.6), 5))
+        canvas = FigureCanvasTkAgg(fig, master=right_area)
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        def draw(selected_labels=None):
+            ax.clear()
+
+            # 選択ラベルのインデックスを作る
+            if selected_labels is None or len(labels) < 5:
+                sel_idx = list(range(len(labels)))
+                sel_labels = labels
+            else:
+                sel_idx = [i for i, l in enumerate(labels) if l in selected_labels]
+                sel_labels = [labels[i] for i in sel_idx]
+
+            if not sel_idx:
+                messagebox.showinfo("情報", "表示するタスクが選択されていません。")
+                canvas.draw()
+                return
+
+            x = np.arange(len(sel_labels))
+
+            # フィルタしたデータ行列
+            filtered = data_matrix[:, sel_idx]
+
+            bottom = np.zeros(len(sel_labels))
+            bars = []
+            for i, c in enumerate(categories):
+                vals = filtered[i]
+                b = ax.bar(x, vals, bottom=bottom, color=cat_colors.get(c), label=c)
+                bars.append(b)
+                bottom += vals
+
+            # 小さなセグメントはラベルを非表示にするための閾値（最大合計の 2%）
+            totals_hours = bottom
+            max_total = max(totals_hours) if len(totals_hours) else 0
+            min_display = max_total * 0.02
+
+            # セグメント内部に hh:mm:ss 表示
+            for i, b in enumerate(bars):
+                for j, rect in enumerate(b):
+                    h = rect.get_height()
+                    if h <= 0 or h < min_display:
+                        continue
+                    secs = int(h * 3600)
+                    label = self.format_seconds(secs)
+                    x_pos = rect.get_x() + rect.get_width() / 2
+                    y_pos = rect.get_y() + h / 2
+                    color_rgba = cat_colors.get(categories[i])
+                    try:
+                        r, g, bl = color_rgba[:3]
+                        luminance = 0.299 * r + 0.587 * g + 0.114 * bl
+                        text_color = 'white' if luminance < 0.5 else 'black'
+                    except Exception:
+                        text_color = 'black'
+                    ax.text(x_pos, y_pos, label, ha='center', va='center', color=text_color, fontsize=8)
+
+            # バー上に合計を hh:mm:ss で表示
+            for xi, total in enumerate(totals_hours):
+                if total > 0:
+                    total_secs = int(total * 3600)
+                    ax.text(xi, total, self.format_seconds(total_secs), ha='center', va='bottom', fontsize=9)
+
+            ax.set_xticks(x)
+            ax.set_xticklabels(sel_labels, rotation=45, ha='right')
+            ax.set_ylabel('作業時間（時間）')
+            ax.set_title('タスク別 作業時間（カテゴリ内訳）')
+
+            # 凡例（カテゴリ）
+            ax.legend(title='カテゴリ', bbox_to_anchor=(1.02, 1), loc='upper left')
+
+            fig.tight_layout()
+            canvas.draw()
+
+        # 初回描画（全選択）
+        draw()
 
 
 
