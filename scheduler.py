@@ -459,10 +459,37 @@ class TaskTimerApp:
             bars.append(b)
             bottom += vals
 
-        # バー上に合計を表示
-        for xi, total in enumerate(bottom):
+        # 小さなセグメントはラベルを非表示にするための閾値（最大合計の 2%）
+        totals_hours = bottom
+        max_total = max(totals_hours) if len(totals_hours) else 0
+        min_display = max_total * 0.02
+
+        # 各セグメント内部に hh:mm:ss 表示（高さが十分なもののみ）
+        for i, b in enumerate(bars):
+            for j, rect in enumerate(b):
+                h = rect.get_height()  # hours
+                if h <= 0:
+                    continue
+                if h < min_display:
+                    continue
+                secs = int(h * 3600)
+                label = self.format_seconds(secs)
+                x_pos = rect.get_x() + rect.get_width() / 2
+                y_pos = rect.get_y() + h / 2
+                color_rgba = cat_colors.get(categories[i])
+                try:
+                    r, g, bl = color_rgba[:3]
+                    luminance = 0.299 * r + 0.587 * g + 0.114 * bl
+                    text_color = 'white' if luminance < 0.5 else 'black'
+                except Exception:
+                    text_color = 'black'
+                ax.text(x_pos, y_pos, label, ha='center', va='center', color=text_color, fontsize=8)
+
+        # バー上に合計を hh:mm:ss で表示
+        for xi, total in enumerate(totals_hours):
             if total > 0:
-                ax.text(xi, total, f"{total:.2f}h", ha='center', va='bottom', fontsize=9)
+                total_secs = int(total * 3600)
+                ax.text(xi, total, self.format_seconds(total_secs), ha='center', va='bottom', fontsize=9)
 
         ax.set_xticks(x)
         ax.set_xticklabels(labels, rotation=45, ha='right')
