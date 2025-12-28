@@ -316,6 +316,11 @@ class TaskTimerApp:
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         self.cat_listbox.config(yscrollcommand=sb.set)
 
+        # マウスでドラッグして順序を入れ替えられるようにする
+        self.cat_listbox.bind('<ButtonPress-1>', self.on_cat_drag_start)
+        self.cat_listbox.bind('<B1-Motion>', self.on_cat_drag_motion)
+        self.cat_listbox.bind('<ButtonRelease-1>', self.on_cat_drag_stop)
+
         btn_frame = tk.Frame(win)
         btn_frame.pack(fill="x", padx=10, pady=5)
         tk.Button(btn_frame, text="追加", command=self.add_category).pack(side=tk.LEFT, padx=5)
@@ -375,6 +380,60 @@ class TaskTimerApp:
                 self.category_cb.set(vals[0] if vals else '-')
         except Exception:
             pass
+
+    # --- カテゴリのドラッグで並び替え ---
+    def on_cat_drag_start(self, event):
+        try:
+            idx = self.cat_listbox.nearest(event.y)
+            self._cat_drag_index = idx
+            self._cat_drag_value = self.cat_listbox.get(idx)
+            self.cat_listbox.selection_clear(0, tk.END)
+            self.cat_listbox.selection_set(idx)
+            self.cat_listbox.activate(idx)
+        except Exception:
+            pass
+
+    def on_cat_drag_motion(self, event):
+        if not hasattr(self, '_cat_drag_index'):
+            return
+        try:
+            target = self.cat_listbox.nearest(event.y)
+            if target != self._cat_drag_index:
+                val = self._cat_drag_value
+                # delete old and insert at new position
+                self.cat_listbox.delete(self._cat_drag_index)
+                # If moving downwards and deleting earlier index, insert at target (which has shifted)
+                self.cat_listbox.insert(target, val)
+                self._cat_drag_index = target
+                self.cat_listbox.selection_clear(0, tk.END)
+                self.cat_listbox.selection_set(target)
+                self.cat_listbox.activate(target)
+        except Exception:
+            pass
+
+    def on_cat_drag_stop(self, event):
+        if not hasattr(self, '_cat_drag_index'):
+            return
+        try:
+            # 新しい順序を保存
+            new_order = list(self.cat_listbox.get(0, tk.END))
+            self.data['categories'] = new_order
+            self.save_data()
+            self.refresh_category_comboboxes()
+            # 選択を残す
+            try:
+                self.cat_listbox.selection_clear(0, tk.END)
+                idx = new_order.index(self._cat_drag_value)
+                self.cat_listbox.selection_set(idx)
+                self.cat_listbox.activate(idx)
+            except Exception:
+                pass
+        finally:
+            # 後片付け
+            if hasattr(self, '_cat_drag_index'):
+                del self._cat_drag_index
+            if hasattr(self, '_cat_drag_value'):
+                del self._cat_drag_value
 
     def open_category_graph(self):
         """タスク別の累計作業時間を、同名タスクの合計で比較する棒グラフとして表示します。
@@ -508,16 +567,7 @@ class TaskTimerApp:
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        btn_frame = tk.Frame(win)
-        btn_frame.pack(fill='x', pady=5)
-        def save_png():
-            import tkinter.filedialog as fd
-            path = fd.asksaveasfilename(defaultextension='.png', filetypes=[('PNG', '*.png')])
-            if path:
-                fig.savefig(path)
-                messagebox.showinfo("保存", f"グラフを保存しました: {path}")
 
-        tk.Button(btn_frame, text="画像として保存", command=save_png).pack(side=tk.RIGHT, padx=5)
 
 if __name__ == "__main__":
     root = tk.Tk()
