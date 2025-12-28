@@ -1,0 +1,18 @@
+{
+    "tasks": [
+        {
+            "name": "aa",
+            "worker": "aa",
+            "estimate": "1",
+            "start_date": "2025/12/28",
+            "end_date": "2025/12/28",
+            "actual_sec": 4,
+            "progress": 0,
+            "memo": ""
+        }
+    ],
+    "categories": [
+        "設計",
+        "実装"
+    ]
+}

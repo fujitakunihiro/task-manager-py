@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
+from tkinter import simpledialog
 import json
 import time
 import os
@@ -20,6 +21,7 @@ class TaskTimerApp:
         self.is_edit_mode = False 
         self.data = self.load_data()
 
+        self.setup_menu()
         self.setup_ui()
 
     def format_seconds(self, seconds):
@@ -44,6 +46,13 @@ class TaskTimerApp:
             ent = tk.Entry(self.left_frame)
             ent.pack(fill="x", pady=1)
             self.entries[key] = ent
+        
+        # カテゴリ選択
+        tk.Label(self.left_frame, text="カテゴリ", font=("Arial", 9)).pack(anchor="w")
+        self.category_cb = ttk.Combobox(self.left_frame, values=self.data.get("categories", ["-"]), state="readonly")
+        current_cat = self.data.get("categories", ["-"])[0] if self.data.get("categories") else "-"
+        self.category_cb.set(current_cat)
+        self.category_cb.pack(fill="x", pady=1)
         
         now = datetime.now()
         current_year = now.year
@@ -71,16 +80,18 @@ class TaskTimerApp:
         self.cancel_btn = tk.Button(self.left_frame, text="編集をキャンセル", command=self.exit_edit_mode, bg="#f8d7da")
         
         # Treeview (表形式)
-        columns = ("name", "progress", "deadline", "worker")
+        columns = ("name", "progress", "deadline", "worker", "category")
         self.task_tree = ttk.Treeview(self.left_frame, columns=columns, show="headings", height=20)
         self.task_tree.heading("name", text="タスク名")
         self.task_tree.heading("progress", text="進捗")
         self.task_tree.heading("deadline", text="期限")
         self.task_tree.heading("worker", text="担当")
-        self.task_tree.column("name", width=140, anchor="w")
+        self.task_tree.heading("category", text="カテゴリ")
+        self.task_tree.column("name", width=120, anchor="w")
         self.task_tree.column("progress", width=50, anchor="center")
-        self.task_tree.column("deadline", width=80, anchor="center")
+        self.task_tree.column("deadline", width=70, anchor="center")
         self.task_tree.column("worker", width=70, anchor="w")
+        self.task_tree.column("category", width=70, anchor="w")
 
         scrollbar = ttk.Scrollbar(self.left_frame, orient=tk.VERTICAL, command=self.task_tree.yview)
         self.task_tree.configure(yscroll=scrollbar.set)
@@ -149,6 +160,8 @@ class TaskTimerApp:
         self.entries["name"].insert(0, task.get("name", ""))
         self.entries["worker"].insert(0, task.get("worker", ""))
         self.entries["estimate"].insert(0, task.get("estimate", "0"))
+        # カテゴリの選択を復元
+        self.category_cb.set(task.get("category", self.data.get("categories", ["-"])[0]))
         
         # ボタン状態の変更
         self.input_title_label.config(text="【編集モード】", fg="blue")
@@ -180,7 +193,8 @@ class TaskTimerApp:
             "worker": self.entries["worker"].get() or "-", 
             "estimate": self.entries["estimate"].get() or "0", 
             "start_date": s_d, 
-            "end_date": e_d
+            "end_date": e_d,
+            "category": self.category_cb.get() or "-"
         }
 
         if self.is_edit_mode:
@@ -199,7 +213,7 @@ class TaskTimerApp:
         for t in self.data["tasks"]:
             deadline_short = t.get('end_date', '')[2:]
             self.task_tree.insert("", tk.END, values=(
-                t.get("name", ""), f"{t.get('progress', 0)}%", deadline_short, t.get("worker", "-")
+                t.get("name", ""), f"{t.get('progress', 0)}%", deadline_short, t.get("worker", "-"), t.get("category", "-")
             ))
 
     def on_select_task(self, event):
@@ -211,7 +225,7 @@ class TaskTimerApp:
             task = self.data["tasks"][self.selected_task_index]
             self.info_label.config(text=task['name'])
             self.task_total_time_label.config(text=f"累計: {self.format_seconds(task.get('actual_sec', 0))}")
-            self.sub_info_label.config(text=f"期間: {task.get('start_date')}〜{task.get('end_date')} | 担当: {task['worker']} | 予定: {task['estimate']}h")
+            self.sub_info_label.config(text=f"期間: {task.get('start_date')}〜{task.get('end_date')} | 担当: {task['worker']} | 予定: {task['estimate']}h | カテゴリ: {task.get('category', '-')}")
             self.prog_var.set(task.get("progress", 0))
             self.memo_text.delete("1.0", tk.END); self.memo_text.insert("1.0", task.get("memo", ""))
             self.start_btn.config(state="normal"); self.edit_btn.config(state="normal"); self.delete_btn.config(state="normal")
@@ -273,11 +287,93 @@ class TaskTimerApp:
             try:
                 with open(DATA_FILE, "r", encoding="utf-8") as f: return json.load(f)
             except: pass
-        return {"tasks": []}
+        # 初期データにはカテゴリ配列を持たせる
+        return {"tasks": [], "categories": ["-"]}
 
     def save_data(self):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(self.data, f, ensure_ascii=False, indent=4)
+
+    # --- メニュとカテゴリ管理 ---
+    def setup_menu(self):
+        menubar = tk.Menu(self.root)
+        menu = tk.Menu(menubar, tearoff=0)
+        menu.add_command(label="カテゴリ", command=self.open_category_manager)
+        menubar.add_cascade(label="メニュー", menu=menu)
+        self.root.config(menu=menubar)
+
+    def open_category_manager(self):
+        win = tk.Toplevel(self.root)
+        win.title("カテゴリ管理")
+        win.geometry("300x300")
+
+        lb_frame = tk.Frame(win)
+        lb_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        self.cat_listbox = tk.Listbox(lb_frame)
+        self.cat_listbox.pack(side=tk.LEFT, fill="both", expand=True)
+        sb = tk.Scrollbar(lb_frame, orient=tk.VERTICAL, command=self.cat_listbox.yview)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.cat_listbox.config(yscrollcommand=sb.set)
+
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(fill="x", padx=10, pady=5)
+        tk.Button(btn_frame, text="追加", command=self.add_category).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="削除", command=self.delete_selected_category).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="閉じる", command=win.destroy).pack(side=tk.RIGHT, padx=5)
+
+        self.refresh_category_listbox()
+
+    def refresh_category_listbox(self):
+        if not hasattr(self, 'cat_listbox'):
+            return
+        self.cat_listbox.delete(0, tk.END)
+        for c in self.data.get('categories', []):
+            self.cat_listbox.insert(tk.END, c)
+
+    def add_category(self):
+        new = simpledialog.askstring("カテゴリ追加", "カテゴリ名を入力してください:", parent=self.root)
+        if not new: return
+        new = new.strip()
+        if not new: return
+        if new in self.data.get('categories', []):
+            messagebox.showinfo("情報", "既に同名のカテゴリが存在します")
+            return
+        self.data.setdefault('categories', []).append(new)
+        self.save_data()
+        self.refresh_category_listbox()
+        self.refresh_category_comboboxes()
+
+    def delete_selected_category(self):
+        sel = None
+        try:
+            sel = self.cat_listbox.get(self.cat_listbox.curselection())
+        except Exception:
+            messagebox.showwarning("警告", "削除するカテゴリを選択してください")
+            return
+        if sel == "-":
+            messagebox.showwarning("警告", """'-' は削除できません""")
+            return
+        if not messagebox.askyesno("確認", f"カテゴリ '{sel}' を削除しますか？\n削除するとこのカテゴリを参照しているタスクのカテゴリは '-' に変更されます"):
+            return
+        # タスクのカテゴリ参照をリセット
+        for t in self.data.get('tasks', []):
+            if t.get('category') == sel:
+                t['category'] = '-'
+        self.data['categories'].remove(sel)
+        self.save_data()
+        self.refresh_category_listbox()
+        self.refresh_category_comboboxes()
+        self.refresh_listbox()
+
+    def refresh_category_comboboxes(self):
+        vals = self.data.get('categories', ['-'])
+        try:
+            self.category_cb.config(values=vals)
+            # 既定値が存在しなければ '-' を選択
+            if self.category_cb.get() not in vals:
+                self.category_cb.set(vals[0] if vals else '-')
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     root = tk.Tk()
