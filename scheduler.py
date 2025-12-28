@@ -299,6 +299,7 @@ class TaskTimerApp:
         menubar = tk.Menu(self.root)
         menu = tk.Menu(menubar, tearoff=0)
         menu.add_command(label="カテゴリ", command=self.open_category_manager)
+        menu.add_command(label="グラフ", command=self.open_category_graph)
         menubar.add_cascade(label="メニュー", menu=menu)
         self.root.config(menu=menubar)
 
@@ -374,6 +375,122 @@ class TaskTimerApp:
                 self.category_cb.set(vals[0] if vals else '-')
         except Exception:
             pass
+
+    def open_category_graph(self):
+        """タスク別の累計作業時間を、同名タスクの合計で比較する棒グラフとして表示します。
+        各タスクのバーはカテゴリごとの内訳で色分け（積み上げ）して表示されます。
+        日本語を表示できるフォントがあれば自動で設定を試みます。
+        """
+        try:
+            import matplotlib
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            import matplotlib.font_manager as fm
+            import numpy as np
+        except Exception:
+            messagebox.showerror("依存パッケージ不足", "グラフ表示には matplotlib と numpy が必要です。\n\npip install matplotlib numpy でインストールしてください。")
+            return
+
+        # --- 日本語フォントの自動検出（Windows の代表的なフォントを探す）
+        try:
+            candidates = ['Meiryo', 'Yu Gothic', 'MS Gothic', 'Noto Sans CJK JP', 'IPAPGothic', 'TakaoPGothic']
+            jp_font = None
+            for fpath in fm.findSystemFonts():
+                name = fpath.lower()
+                for c in candidates:
+                    if c.lower() in name:
+                        jp_font = fpath
+                        break
+                if jp_font:
+                    break
+            if jp_font:
+                prop = fm.FontProperties(fname=jp_font)
+                try:
+                    font_name = prop.get_name()
+                    matplotlib.rcParams['font.family'] = 'sans-serif'
+                    matplotlib.rcParams['font.sans-serif'] = [font_name] + matplotlib.rcParams.get('font.sans-serif', [])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 集計: タスク名ごと -> カテゴリごとの秒数合計
+        task_map = {}
+        categories = list(self.data.get('categories', ['-']))
+        for t in self.data.get('tasks', []):
+            name = t.get('name', '-')
+            cat = t.get('category', '-')
+            try:
+                secs = int(t.get('actual_sec', 0))
+            except Exception:
+                secs = 0
+            task_map.setdefault(name, {})
+            task_map[name].setdefault(cat, 0)
+            task_map[name][cat] += secs
+
+        # ソート（合計降順）
+        items = sorted([(name, d) for name, d in task_map.items()], key=lambda x: sum(x[1].values()), reverse=True)
+        labels = [i[0] for i in items]
+        if not labels:
+            messagebox.showinfo("情報", "表示するタスクデータがありません。")
+            return
+
+        # 色割り当て
+        cmap = plt.get_cmap('tab20')
+        cat_colors = {c: cmap(i % cmap.N) for i, c in enumerate(categories)}
+
+        # 各カテゴリごとの値配列を作成（単位: 時間）
+        data_matrix = []
+        for c in categories:
+            row = []
+            for _, d in items:
+                row.append(d.get(c, 0) / 3600.0)
+            data_matrix.append(row)
+        data_matrix = np.array(data_matrix)
+
+        x = np.arange(len(labels))
+        fig, ax = plt.subplots(figsize=(max(8, len(labels) * 0.6), 5))
+
+        bottom = np.zeros(len(labels))
+        bars = []
+        for i, c in enumerate(categories):
+            vals = data_matrix[i]
+            b = ax.bar(x, vals, bottom=bottom, color=cat_colors.get(c), label=c)
+            bars.append(b)
+            bottom += vals
+
+        # バー上に合計を表示
+        for xi, total in enumerate(bottom):
+            if total > 0:
+                ax.text(xi, total, f"{total:.2f}h", ha='center', va='bottom', fontsize=9)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=45, ha='right')
+        ax.set_ylabel('作業時間（時間）')
+        ax.set_title('タスク別 作業時間（カテゴリ内訳）')
+
+        # 凡例（カテゴリ）
+        ax.legend(title='カテゴリ', bbox_to_anchor=(1.02, 1), loc='upper left')
+
+        fig.tight_layout()
+
+        # 表示ウィンドウ
+        win = tk.Toplevel(self.root)
+        win.title("タスク別グラフ（カテゴリ内訳）")
+        canvas = FigureCanvasTkAgg(fig, master=win)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(fill='x', pady=5)
+        def save_png():
+            import tkinter.filedialog as fd
+            path = fd.asksaveasfilename(defaultextension='.png', filetypes=[('PNG', '*.png')])
+            if path:
+                fig.savefig(path)
+                messagebox.showinfo("保存", f"グラフを保存しました: {path}")
+
+        tk.Button(btn_frame, text="画像として保存", command=save_png).pack(side=tk.RIGHT, padx=5)
 
 if __name__ == "__main__":
     root = tk.Tk()

@@ -2,11 +2,34 @@
     "tasks": [
         {
             "name": "aa",
+            "worker": "-",
+            "estimate": "0",
+            "start_date": "2025/12/28",
+            "end_date": "2025/12/28",
+            "category": "実装",
+            "actual_sec": 6,
+            "progress": 0,
+            "memo": ""
+        },
+        {
+            "name": "aa",
             "worker": "aa",
             "estimate": "1",
             "start_date": "2025/12/28",
             "end_date": "2025/12/28",
-            "actual_sec": 4,
+            "actual_sec": 6,
+            "progress": 0,
+            "memo": "",
+            "category": "設計"
+        },
+        {
+            "name": "bb",
+            "worker": "fujita",
+            "estimate": "10",
+            "start_date": "2025/12/28",
+            "end_date": "2025/12/28",
+            "category": "設計",
+            "actual_sec": 0,
             "progress": 0,
             "memo": ""
         }
